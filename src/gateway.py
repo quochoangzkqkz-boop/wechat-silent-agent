@@ -374,6 +374,12 @@ def run_gateway():
                 time.sleep(2)
                 continue
 
+            # Auto-unminimize & send to HWND_BOTTOM guard: keeps DWM rendering buffer active without stealing focus
+            if user32.IsIconic(hwnd) or not user32.IsWindowVisible(hwnd):
+                user32.ShowWindow(hwnd, 4) # SW_SHOWNOACTIVATE
+                user32.SetWindowPos(hwnd, 1, 0, 0, 0, 0, 0x0002 | 0x0001 | 0x0010) # HWND_BOTTOM | SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+                time.sleep(0.08)
+
             im, w, h = capture_wechat_window(hwnd)
             if not im or w <= 0 or h <= 0:
                 time.sleep(1.5)
