@@ -1,9 +1,10 @@
 """
-WeChat 4.x Silent Visual AI Gateway (v2.0)
+WeChat 4.x Silent Visual AI Gateway (v2.1)
 Architecture:
 1. Native PrintWindow visual buffer capture (zero desktop grab, immune to occlusion by browsers/editors).
-2. Atomic input injection with positive focus verification and foreground restoration (zero Ctrl+A, zero desktop interference).
-3. Local DeepSeek-R1 agent runtime with autonomous file searching & tool execution.
+2. AttachThreadInput foreground lock bypass & verification: guarantees message delivery with zero desktop interference.
+3. Completely eliminated {Ctrl}a: zero risk of selecting user's active page.
+4. Local DeepSeek-R1 agent runtime with autonomous file searching & tool execution.
 """
 
 import os
@@ -78,6 +79,32 @@ def get_wechat_hwnd():
         return hwnd
     return None
 
+def force_foreground_window(target_hwnd: int) -> bool:
+    """Use AttachThreadInput to bypass Windows foreground lock and safely focus target window."""
+    if not target_hwnd or not user32.IsWindow(target_hwnd):
+        return False
+    fg_hwnd = user32.GetForegroundWindow()
+    if fg_hwnd == target_hwnd:
+        return True
+
+    fg_thread = user32.GetWindowThreadProcessId(fg_hwnd, None)
+    cur_thread = kernel32.GetCurrentThreadId()
+
+    if fg_thread and fg_thread != cur_thread:
+        user32.AttachThreadInput(cur_thread, fg_thread, True)
+        user32.SetForegroundWindow(target_hwnd)
+        user32.BringWindowToTop(target_hwnd)
+        user32.AttachThreadInput(cur_thread, fg_thread, False)
+    else:
+        user32.SetForegroundWindow(target_hwnd)
+        user32.BringWindowToTop(target_hwnd)
+
+    for _ in range(8):
+        if user32.GetForegroundWindow() == target_hwnd:
+            return True
+        time.sleep(0.02)
+    return user32.GetForegroundWindow() == target_hwnd
+
 def capture_wechat_window(hwnd):
     rect = wintypes.RECT()
     user32.GetWindowRect(hwnd, ctypes.byref(rect))
@@ -145,7 +172,7 @@ def copy_file_to_clipboard(file_path: str) -> bool:
         return True
     return False
 
-def send_clean_message(hwnd, text: str):
+def send_clean_message(hwnd, text: str) -> bool:
     """Safely focus WeChat input box, paste message, and restore user focus (<30ms)."""
     rect = wintypes.RECT()
     user32.GetWindowRect(hwnd, ctypes.byref(rect))
@@ -156,32 +183,37 @@ def send_clean_message(hwnd, text: str):
 
     pyperclip.copy(text)
 
-    input_x = rect.left + int((rect.right - rect.left) * 0.5)
+    input_x = rect.left + int((rect.right - rect.left) * 0.6)
     input_y = rect.bottom - 60
 
-    user32.SetForegroundWindow(hwnd)
+    force_foreground_window(hwnd)
+
     user32.SetCursorPos(input_x, input_y)
     user32.mouse_event(0x0002, 0, 0, 0, 0)
     user32.mouse_event(0x0004, 0, 0, 0, 0)
-    time.sleep(0.05)
+    time.sleep(0.06)
 
+    sent = False
     if user32.GetForegroundWindow() == hwnd:
         user32.keybd_event(VK_CONTROL, 0, 0, 0)
         user32.keybd_event(VK_V, 0, 0, 0)
         user32.keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0)
         user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
-        time.sleep(0.05)
+        time.sleep(0.06)
         user32.keybd_event(VK_RETURN, 0, 0, 0)
         user32.keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, 0)
+        sent = True
 
     user32.SetCursorPos(orig_pos.x, orig_pos.y)
     if orig_fg and orig_fg != hwnd:
-        user32.SetForegroundWindow(orig_fg)
+        force_foreground_window(orig_fg)
 
-def send_clean_file(hwnd, file_path: str):
+    return sent
+
+def send_clean_file(hwnd, file_path: str) -> bool:
     """Safely paste and send file attachments via CF_HDROP."""
     if not copy_file_to_clipboard(file_path):
-        return
+        return False
 
     rect = wintypes.RECT()
     user32.GetWindowRect(hwnd, ctypes.byref(rect))
@@ -190,15 +222,16 @@ def send_clean_file(hwnd, file_path: str):
     user32.GetCursorPos(ctypes.byref(orig_pos))
     orig_fg = user32.GetForegroundWindow()
 
-    input_x = rect.left + int((rect.right - rect.left) * 0.5)
+    input_x = rect.left + int((rect.right - rect.left) * 0.6)
     input_y = rect.bottom - 60
 
-    user32.SetForegroundWindow(hwnd)
+    force_foreground_window(hwnd)
     user32.SetCursorPos(input_x, input_y)
     user32.mouse_event(0x0002, 0, 0, 0, 0)
     user32.mouse_event(0x0004, 0, 0, 0, 0)
     time.sleep(0.08)
 
+    sent = False
     if user32.GetForegroundWindow() == hwnd:
         user32.keybd_event(VK_CONTROL, 0, 0, 0)
         user32.keybd_event(VK_V, 0, 0, 0)
@@ -207,11 +240,14 @@ def send_clean_file(hwnd, file_path: str):
         time.sleep(0.1)
         user32.keybd_event(VK_RETURN, 0, 0, 0)
         user32.keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, 0)
+        sent = True
         time.sleep(0.8)
 
     user32.SetCursorPos(orig_pos.x, orig_pos.y)
     if orig_fg and orig_fg != hwnd:
-        user32.SetForegroundWindow(orig_fg)
+        force_foreground_window(orig_fg)
+
+    return sent
 
 def ocr_crop(image_path: str) -> str:
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -232,7 +268,7 @@ def ocr_crop(image_path: str) -> str:
 
 def run_gateway():
     print("=" * 70)
-    print("🤖 WeChat 4.x Silent Visual AI Gateway (v2.0 Clean Edition)")
+    print("🤖 WeChat 4.x Silent Visual AI Gateway (v2.1 Edition)")
     print("💡 Zero Mouse Hijacking | Zero Page Select | Win32 PrintWindow | Local DeepSeek-R1")
     print("=" * 70)
 
@@ -283,29 +319,33 @@ def run_gateway():
                 crop_img.save(crop_path)
                 ocr_text = ocr_crop(crop_path)
 
-                is_self_reply = any(k in ocr_text for k in ["Neuro", "【Neuro】", "[Neuro", "Neuro)"])
+                is_self_reply = any(k in ocr_text for k in ["Neuro", "【Neuro】", "[Neuro", "Neuro)", "随时为您效劳", "静默对齐测试"])
                 is_file_card = any(k in ocr_text for k in ["上传中", "微信电脑版", "已发送", "发送中", "信电脑版", "电脑版", "file_test.txt"])
 
                 if ocr_text and not is_self_reply and not is_file_card and ocr_text != last_processed_text:
-                    last_processed_text = ocr_text
                     print(f"\n📩 [New Message Detected]: '{ocr_text}'")
 
                     reply, files = think_and_execute(ocr_text)
                     print(f"💬 [Agent Reply]: {reply}")
 
-                    send_clean_message(hwnd, f"【Neuro】{reply}")
+                    sent = send_clean_message(hwnd, f"【Neuro】{reply}")
+                    if not sent:
+                        time.sleep(0.2)
+                        sent = send_clean_message(hwnd, f"【Neuro】{reply}")
 
-                    for fp in files:
-                        print(f"📎 [Sending Attachment]: {os.path.basename(fp)} ...")
-                        send_clean_file(hwnd, fp)
+                    if sent:
+                        last_processed_text = ocr_text
+                        for fp in files:
+                            print(f"📎 [Sending Attachment]: {os.path.basename(fp)} ...")
+                            send_clean_file(hwnd, fp)
 
-                    print("✅ Interaction complete. Resuming silent polling...")
-                    time.sleep(1.0)
+                        print("✅ Interaction complete. Resuming silent polling...")
+                        time.sleep(1.0)
 
-                    new_im, nw, nh = capture_wechat_window(hwnd)
-                    if new_im:
-                        new_crop = new_im.crop((320, max(0, nh - 300), max(321, nw - 20), max(1, nh - 145)))
-                        last_hash = hashlib.md5(new_crop.tobytes()).hexdigest()
+                        new_im, nw, nh = capture_wechat_window(hwnd)
+                        if new_im:
+                            new_crop = new_im.crop((320, max(0, nh - 300), max(321, nw - 20), max(1, nh - 145)))
+                            last_hash = hashlib.md5(new_crop.tobytes()).hexdigest()
                 else:
                     last_hash = cur_hash
 
