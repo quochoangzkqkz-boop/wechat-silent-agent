@@ -2,21 +2,15 @@
 set "PATH=%PATH%;C:\Users\Administrator\.git-bin\cmd"
 cd /d "%~dp0"
 echo ========================================================
-echo   Push WeChat-Silent-Agent to GitHub
+echo   Pushing WeChat-Silent-Agent to GitHub
+echo   Target: https://github.com/quochoangzkqkz-boop/wechat-silent-agent.git
 echo ========================================================
 echo.
-echo Please create an empty repository on GitHub first:
-echo https://github.com/new
-echo.
-set /p REPO_URL="Enter your GitHub repository URL (e.g. https://github.com/YourUsername/wechat-silent-agent.git): "
-if "%REPO_URL%"=="" goto end
-
 git remote remove origin 2>nul
-git remote add origin %REPO_URL%
+git remote add origin https://github.com/quochoangzkqkz-boop/wechat-silent-agent.git
 git branch -M main
-echo.
-echo Pushing to GitHub...
+echo Pushing to GitHub (If prompted, enter your GitHub Username and Personal Access Token)...
 git push -u origin main
-
-:end
+echo.
+echo ========================================================
 pause
