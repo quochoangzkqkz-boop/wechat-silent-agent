@@ -1,0 +1,30 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# Large Model weights
+*.gguf
+*.bin
+*.safetensors
+models/
+
+# Local databases & user data
+*.db
+*.sqlite
+*.sqlite3
+cache_bubble.png
+current_bubble.png
+*.log
+
+# Office temporary lock files
+~$*
+
+# OS artifacts
+Thumbs.db
+.DS_Store
