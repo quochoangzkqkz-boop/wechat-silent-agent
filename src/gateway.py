@@ -328,7 +328,10 @@ def run_gateway():
                     reply, files = think_and_execute(ocr_text)
                     if "</think>" in reply:
                         reply = reply.split("</think>")[-1].strip()
-                    reply = re.sub(r"<think>.*?</think>", "", reply, flags=re.DOTALL).strip()
+                    reply = re.sub(r"<think>.*?</think>", "", reply, flags=re.DOTALL)
+                    reply = re.sub(r"<｜.*?｜>", "", reply)
+                    reply = re.sub(r"```json\s*\{.*?\}\s*```", "", reply, flags=re.DOTALL)
+                    reply = reply.strip().lstrip("|").strip()
                     print(f"💬 [Agent Reply]: {reply}")
 
                     sent = send_clean_message(hwnd, f"【Neuro】{reply}")
