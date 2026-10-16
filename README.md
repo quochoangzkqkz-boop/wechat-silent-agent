@@ -82,7 +82,7 @@
 
 ### 2. 克隆与依赖安装
 ```bash
-git clone https://github.com/your-username/wechat-silent-agent.git
+git clone https://github.com/quochoangzkqkz-boop/wechat-silent-agent.git
 cd wechat-silent-agent
 
 # 安装精简依赖 (纯 Python，无需编译环境)
