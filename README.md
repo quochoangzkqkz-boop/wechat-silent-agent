@@ -36,10 +36,10 @@
          │  (云端同步)
          ▼
 [PC 微信 4.1 窗口]  <──────────────────────────┐
-         │ (内存屏幕缓冲)                        │  (<15ms 瞬时物理光标恢复 & CF_HDROP)
+         │ (Win32 PrintWindow 内存离线缓冲)      │  (<30ms AttachThreadInput 强穿 & CF_HDROP)
          ▼                                     │
-[差分哈希检测器 (ImageGrab + MD5)]               │
-         │  (仅屏幕变化时触发)                   │
+[差分哈希检测器 (2x Lanczos + MD5)]              │
+         │  (仅微信窗口渲染变化时触发)             │
          ▼                                     │
 [Windows.Media.Ocr 本地引擎]                    │
          │  (提取新指令文本)                     │
@@ -49,8 +49,12 @@
 │                                                                          │
 │  - 长思维链思考 (Chain-of-Thought)                                        │
 │  - 斯坦福 Generative Agents 长期海马体记忆 (SQLite + 衰减检索)               │
-│  - 物理技能库 (Tool-Calling / Function Calling):                          │
+│  - 全能物理技能库 (Tool-Calling / Function Calling):                      │
+│     ├─ capture_desktop_screenshot: 电脑桌面 2.5K 全屏高清截屏回传手机       │
 │     ├─ search_and_send_file: 模糊全盘深度文件寻道 (.pdf, .docx, .caj)     │
+│     ├─ github_*: GitHub 仓库巡检、全球开源项目检索、读 README、建 Issue   │
+│     ├─ git_repo_status_and_push: 本地代码一键暂存、提交并推送到 GitHub    │
+│     ├─ browser_*: Edge Playwright 实时联网搜索、网页正文精读、长截图回传    │
 │     ├─ draw_cad_part: 2D 工业机械制图 (.dxf 标准图纸)                     │
 │     ├─ generate_solidworks_macro: 3D 参数化建模宏脚本 (.bas)             │
 │     └─ save_document: 论文润色与 Word 成果落地                           │
