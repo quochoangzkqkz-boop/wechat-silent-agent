@@ -326,6 +326,9 @@ def run_gateway():
                     print(f"\n📩 [New Message Detected]: '{ocr_text}'")
 
                     reply, files = think_and_execute(ocr_text)
+                    if "</think>" in reply:
+                        reply = reply.split("</think>")[-1].strip()
+                    reply = re.sub(r"<think>.*?</think>", "", reply, flags=re.DOTALL).strip()
                     print(f"💬 [Agent Reply]: {reply}")
 
                     sent = send_clean_message(hwnd, f"【Neuro】{reply}")
