@@ -12,6 +12,7 @@ import sys
 import time
 import json
 import re
+import difflib
 import hashlib
 import ctypes
 from ctypes import wintypes
@@ -173,9 +174,10 @@ def copy_file_to_clipboard(file_path: str) -> bool:
     return False
 
 def send_clean_message(hwnd, text: str) -> bool:
-    """Safely focus WeChat input box, paste message, and restore user focus (<30ms)."""
+    """Safely focus WeChat input box, paste message, click green Send button, and restore user focus (<50ms)."""
     rect = wintypes.RECT()
     user32.GetWindowRect(hwnd, ctypes.byref(rect))
+    w = rect.right - rect.left
 
     orig_pos = POINT()
     user32.GetCursorPos(ctypes.byref(orig_pos))
@@ -183,7 +185,7 @@ def send_clean_message(hwnd, text: str) -> bool:
 
     pyperclip.copy(text)
 
-    input_x = rect.left + int((rect.right - rect.left) * 0.6)
+    input_x = rect.left + int(w * 0.6)
     input_y = rect.bottom - 60
 
     force_foreground_window(hwnd)
@@ -199,10 +201,22 @@ def send_clean_message(hwnd, text: str) -> bool:
         user32.keybd_event(VK_V, 0, 0, 0)
         user32.keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0)
         user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
-        time.sleep(0.06)
+        time.sleep(0.08)
+
+        # Accurately click green Send button at bottom-right corner
+        btn_x = rect.right - 55
+        btn_y = rect.bottom - 40
+        user32.SetCursorPos(btn_x, btn_y)
+        user32.mouse_event(0x0002, 0, 0, 0, 0)
+        time.sleep(0.03)
+        user32.mouse_event(0x0004, 0, 0, 0, 0)
+
+        # Fallback Enter event
+        time.sleep(0.03)
         user32.keybd_event(VK_RETURN, 0, 0, 0)
         user32.keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, 0)
         sent = True
+        time.sleep(0.1)
 
     user32.SetCursorPos(orig_pos.x, orig_pos.y)
     if orig_fg and orig_fg != hwnd:
@@ -211,18 +225,19 @@ def send_clean_message(hwnd, text: str) -> bool:
     return sent
 
 def send_clean_file(hwnd, file_path: str) -> bool:
-    """Safely paste and send file attachments via CF_HDROP."""
+    """Safely paste and send file attachments via CF_HDROP and click Send button."""
     if not copy_file_to_clipboard(file_path):
         return False
 
     rect = wintypes.RECT()
     user32.GetWindowRect(hwnd, ctypes.byref(rect))
+    w = rect.right - rect.left
 
     orig_pos = POINT()
     user32.GetCursorPos(ctypes.byref(orig_pos))
     orig_fg = user32.GetForegroundWindow()
 
-    input_x = rect.left + int((rect.right - rect.left) * 0.6)
+    input_x = rect.left + int(w * 0.6)
     input_y = rect.bottom - 60
 
     force_foreground_window(hwnd)
@@ -237,7 +252,17 @@ def send_clean_file(hwnd, file_path: str) -> bool:
         user32.keybd_event(VK_V, 0, 0, 0)
         user32.keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0)
         user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
-        time.sleep(0.1)
+        time.sleep(0.15)
+
+        # Click green Send button
+        btn_x = rect.right - 55
+        btn_y = rect.bottom - 40
+        user32.SetCursorPos(btn_x, btn_y)
+        user32.mouse_event(0x0002, 0, 0, 0, 0)
+        time.sleep(0.03)
+        user32.mouse_event(0x0004, 0, 0, 0, 0)
+
+        time.sleep(0.05)
         user32.keybd_event(VK_RETURN, 0, 0, 0)
         user32.keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, 0)
         sent = True
@@ -248,6 +273,47 @@ def send_clean_file(hwnd, file_path: str) -> bool:
         force_foreground_window(orig_fg)
 
     return sent
+
+def normalize_text(text: str) -> str:
+    return re.sub(r'[\s\W_]+', '', text).lower()
+
+def is_agent_echo(ocr_text: str, sent_history: list) -> bool:
+    clean_ocr = normalize_text(ocr_text)
+    if not clean_ocr:
+        return True
+
+    if any(k in clean_ocr for k in ['neuro', 'neur0', '随时为您效劳', '静默对齐测试']):
+        return True
+
+    for reply in sent_history[-10:]:
+        clean_rep = normalize_text(reply)
+        if clean_ocr in clean_rep or clean_rep in clean_ocr:
+            return True
+        if len(clean_ocr) >= 8:
+            match_count = 0
+            stride = 4
+            window_size = 8
+            total_windows = 0
+            for i in range(0, len(clean_ocr) - window_size + 1, stride):
+                total_windows += 1
+                if clean_ocr[i:i+window_size] in clean_rep:
+                    match_count += 1
+            if total_windows > 0 and (match_count / total_windows) >= 0.5:
+                return True
+    return False
+
+def is_duplicate_query(ocr_text: str, recent_queries: list) -> bool:
+    clean_ocr = normalize_text(ocr_text)
+    if not clean_ocr:
+        return True
+    for query in recent_queries[-10:]:
+        clean_q = normalize_text(query)
+        if clean_ocr == clean_q:
+            return True
+        sm = difflib.SequenceMatcher(None, clean_ocr, clean_q)
+        if sm.ratio() >= 0.75:
+            return True
+    return False
 
 def ocr_crop(image_path: str) -> str:
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -290,7 +356,8 @@ def run_gateway():
     crop_path = os.path.join(script_dir, "cache_bubble.png")
 
     last_hash = None
-    last_processed_text = None
+    recent_sent_replies = []
+    recent_user_queries = []
 
     im, w, h = capture_wechat_window(hwnd)
     if im:
@@ -319,10 +386,11 @@ def run_gateway():
                 crop_img.save(crop_path)
                 ocr_text = ocr_crop(crop_path)
 
-                is_self_reply = any(k in ocr_text for k in ["Neuro", "【Neuro】", "[Neuro", "Neuro)", "随时为您效劳", "静默对齐测试"])
                 is_file_card = any(k in ocr_text for k in ["上传中", "微信电脑版", "已发送", "发送中", "信电脑版", "电脑版", "file_test.txt"])
+                echo_detected = is_agent_echo(ocr_text, recent_sent_replies)
+                duplicate_detected = is_duplicate_query(ocr_text, recent_user_queries)
 
-                if ocr_text and not is_self_reply and not is_file_card and ocr_text != last_processed_text:
+                if ocr_text and not is_file_card and not echo_detected and not duplicate_detected:
                     print(f"\n📩 [New Message Detected]: '{ocr_text}'")
 
                     reply, files = think_and_execute(ocr_text)
@@ -334,24 +402,34 @@ def run_gateway():
                     reply = reply.strip().lstrip("|").strip()
                     print(f"💬 [Agent Reply]: {reply}")
 
-                    sent = send_clean_message(hwnd, f"【Neuro】{reply}")
+                    formatted_reply = f"【Neuro】{reply}\n—— [Neuro]"
+
+                    sent = send_clean_message(hwnd, formatted_reply)
                     if not sent:
                         time.sleep(0.2)
-                        sent = send_clean_message(hwnd, f"【Neuro】{reply}")
+                        sent = send_clean_message(hwnd, formatted_reply)
 
                     if sent:
-                        last_processed_text = ocr_text
+                        recent_user_queries.append(ocr_text)
+                        recent_sent_replies.append(formatted_reply)
+                        if len(recent_user_queries) > 20:
+                            recent_user_queries.pop(0)
+                        if len(recent_sent_replies) > 20:
+                            recent_sent_replies.pop(0)
+
                         for fp in files:
                             print(f"📎 [Sending Attachment]: {os.path.basename(fp)} ...")
                             send_clean_file(hwnd, fp)
 
                         print("✅ Interaction complete. Resuming silent polling...")
-                        time.sleep(1.0)
+                        time.sleep(1.2)
 
                         new_im, nw, nh = capture_wechat_window(hwnd)
                         if new_im:
                             new_crop = new_im.crop((320, max(0, nh - 300), max(321, nw - 20), max(1, nh - 145)))
                             last_hash = hashlib.md5(new_crop.tobytes()).hexdigest()
+                    else:
+                        print("❌ Send failed to focus, will retry next poll.")
                 else:
                     last_hash = cur_hash
 
