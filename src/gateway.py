@@ -18,7 +18,7 @@ import ctypes
 from ctypes import wintypes
 import subprocess
 import pyperclip
-from PIL import Image
+from PIL import Image, ImageOps, ImageEnhance
 
 sys.stdout.reconfigure(line_buffering=True)
 
@@ -319,15 +319,51 @@ def ocr_crop(image_path: str) -> str:
     script_dir = os.path.dirname(os.path.abspath(__file__))
     ps_script = os.path.join(script_dir, "scripts", "ps_ocr.ps1")
     try:
+        enhanced_path = image_path.replace(".png", "_x2.png")
+        with Image.open(image_path) as im:
+            rgb_im = im.convert('RGB')
+            gray = ImageOps.grayscale(rgb_im)
+            enhancer = ImageEnhance.Contrast(gray)
+            enhanced = enhancer.enhance(2.0)
+            w, h = enhanced.size
+            up_im = enhanced.resize((w * 2, h * 2), Image.Resampling.LANCZOS)
+            up_im.save(enhanced_path, "PNG")
+
         proc = subprocess.run(
-            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps_script, "-ImagePath", image_path],
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps_script, "-ImagePath", enhanced_path],
             capture_output=True,
             text=True,
             timeout=5
         )
+        try:
+            os.remove(enhanced_path)
+        except Exception:
+            pass
+
         lines = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
-        filtered = [l for l in lines if not re.match(r"^\d{1,2}\s*[:：]\s*\d{2}$", l)]
-        return " ".join(filtered)
+        if not lines:
+            return ""
+
+        last_ts_idx = -1
+        for idx, l in enumerate(lines):
+            clean_l = l.replace(" ", "")
+            if re.search(r"\d{1,2}[:：]\d{2}", clean_l):
+                last_ts_idx = idx
+
+        if last_ts_idx != -1 and last_ts_idx < len(lines) - 1:
+            msg_lines = lines[last_ts_idx + 1:]
+        else:
+            msg_lines = lines
+
+        filtered = []
+        for l in msg_lines:
+            clean = l.replace(" ", "")
+            if not re.search(r"\d{1,2}[:：]\d{2}", clean):
+                filtered.append(l)
+
+        res = "".join(filtered)
+        res = re.sub(r'(?<=[\u4e00-\u9fa5])\s+(?=[\u4e00-\u9fa5])', '', res).strip()
+        return res
     except Exception as e:
         print(f"OCR Error: {e}")
         return ""
