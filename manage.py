@@ -111,14 +111,37 @@ def do_stop():
         print("  ℹ️ 当前没有正在运行的 Neuro 微信监听服务。")
     print("=" * 65)
 
+def ensure_ollama_started():
+    if check_ollama():
+        return True
+    print("  ⏳ 检测到本地推理服务未开启，正在自动拉起 Ollama (DeepSeek-R1 8B)...")
+    ollama_exe = os.path.expandvars(r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe")
+    if os.path.isfile(ollama_exe):
+        env = os.environ.copy()
+        env["HTTP_PROXY"] = "http://127.0.0.1:7897"
+        env["HTTPS_PROXY"] = "http://127.0.0.1:7897"
+        env["OLLAMA_HOST"] = "127.0.0.1:11434"
+        subprocess.Popen([ollama_exe, "serve"], env=env, creationflags=0x08000000)
+        for _ in range(15):
+            time.sleep(1)
+            if check_ollama():
+                print("  🟢 Ollama 本地大脑服务启动成功！")
+                return True
+    print("  ⚠️ Ollama 启动超时，请检查是否已安装。")
+    return False
+
 def do_start():
     print("=" * 65)
-    print("      🚀 正在启动 Neuro 微信监听服务...")
+    print("      🚀 正在启动 Neuro 微信智能体系统...")
     print("=" * 65)
 
+    # 1. 确保本地大模型引擎已就绪
+    ensure_ollama_started()
+
+    # 2. 检查微信监听网关
     existing = find_listener_process()
     if existing:
-        print(f"  ⚠️ Neuro 监听服务已经在运行中 (PID: {existing.pid})，无需重复启动。")
+        print(f"  ⚠️ Neuro 微信监听服务已经在运行中 (PID: {existing.pid})。")
         print("=" * 65)
         return
 
