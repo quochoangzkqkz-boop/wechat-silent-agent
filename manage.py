@@ -121,7 +121,15 @@ def ensure_ollama_started():
         env["HTTP_PROXY"] = "http://127.0.0.1:7897"
         env["HTTPS_PROXY"] = "http://127.0.0.1:7897"
         env["OLLAMA_HOST"] = "127.0.0.1:11434"
-        subprocess.Popen([ollama_exe, "serve"], env=env, creationflags=0x08000000)
+        flags = 0x00000008 | 0x00000200 | 0x08000000
+        subprocess.Popen(
+            [ollama_exe, "serve"],
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=flags
+        )
         for _ in range(15):
             time.sleep(1)
             if check_ollama():
@@ -151,12 +159,15 @@ def do_start():
         print("=" * 65)
         return
 
-    # 启动后台无窗口进程
-    creationflags = 0x08000000 # CREATE_NO_WINDOW
+    # 启动完全脱钩的独立后台进程 (DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW)
+    flags = 0x00000008 | 0x00000200 | 0x08000000
     proc = subprocess.Popen(
         [sys.executable, script_path],
         cwd=os.path.dirname(script_path),
-        creationflags=creationflags
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=flags
     )
     time.sleep(1.5)
 
