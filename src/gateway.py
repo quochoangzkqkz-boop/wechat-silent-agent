@@ -332,7 +332,7 @@ def ocr_crop(image_path: str) -> str:
         proc = subprocess.run(
             ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps_script, "-ImagePath", enhanced_path],
             capture_output=True,
-            text=True,
+            text=False,
             timeout=5
         )
         try:
@@ -340,7 +340,18 @@ def ocr_crop(image_path: str) -> str:
         except Exception:
             pass
 
-        lines = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+        raw_bytes = proc.stdout or b""
+        decoded_output = ""
+        for enc in ("utf-8", "gb18030", "gbk"):
+            try:
+                decoded_output = raw_bytes.decode(enc)
+                break
+            except UnicodeDecodeError:
+                pass
+        if not decoded_output:
+            decoded_output = raw_bytes.decode("gb18030", errors="ignore")
+
+        lines = [line.strip() for line in decoded_output.splitlines() if line.strip()]
         if not lines:
             return ""
 

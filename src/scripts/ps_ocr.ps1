@@ -3,7 +3,8 @@ param(
     [string]$ImagePath
 )
 
-# Load Windows Runtime System Extensions
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 
 $asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { 
@@ -20,7 +21,6 @@ function Await-WinRt($asyncOp, [Type]$type) {
     return $task.Result
 }
 
-# Load WinRT Namespaces for Windows Media OCR
 [Windows.Storage.StorageFile, Windows.Storage, ContentType = WindowsRuntime] | Out-Null
 [Windows.Storage.Streams.IRandomAccessStream, Windows.Storage.Streams, ContentType = WindowsRuntime] | Out-Null
 [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics.Imaging, ContentType = WindowsRuntime] | Out-Null
@@ -34,7 +34,6 @@ if (-not (Test-Path $fullPath)) {
     exit 0
 }
 
-# Run OCR purely offline using native Windows.Media.Ocr Engine
 $file = Await-WinRt ([Windows.Storage.StorageFile]::GetFileFromPathAsync($fullPath)) ([Windows.Storage.StorageFile])
 $stream = Await-WinRt ($file.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
 $decoder = Await-WinRt ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
